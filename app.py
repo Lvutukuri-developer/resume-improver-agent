@@ -1,277 +1,226 @@
 import os
 from flask import Flask, request, render_template_string
 from dotenv import load_dotenv
-from PyPDF2 import PdfReader
 from agent import improve_resume
+from PyPDF2 import PdfReader
+import markdown
 
-# ================================
 # Load environment variables
-# ================================
 load_dotenv()
 
 app = Flask(__name__)
 
-# ================================
-# Premium UI Template
-# ================================
+# =========================
+# 📄 Helper: Extract PDF text
+# =========================
+def extract_text_from_pdf(file):
+    try:
+        reader = PdfReader(file)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() + "\n"
+        return text.strip()
+    except Exception:
+        return ""
+
+# =========================
+# 🎨 FLAGSHIP HTML TEMPLATE
+# =========================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
     <title>AI Resume Improver</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-            background: #f5f7fb;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(180deg, #f9fafb 0%, #eef2ff 100%);
             margin: 0;
-            padding: 0;
+            padding: 40px 20px;
             color: #111827;
         }
 
-        .wrapper {
+        .container {
             max-width: 900px;
-            margin: 70px auto;
-            padding: 0 20px;
-            text-align: center;
+            margin: auto;
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.08);
         }
 
         h1 {
-            font-size: 42px;
-            font-weight: 700;
+            text-align: center;
+            font-size: 36px;
             margin-bottom: 10px;
         }
 
         .subtitle {
+            text-align: center;
             color: #6b7280;
-            margin-bottom: 40px;
-            font-size: 18px;
-        }
-
-        .card {
-            background: white;
-            padding: 40px;
-            border-radius: 16px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
-            text-align: left;
+            margin-bottom: 30px;
         }
 
         textarea {
             width: 100%;
             height: 180px;
-            padding: 14px;
-            border-radius: 10px;
+            padding: 16px;
+            border-radius: 12px;
             border: 1px solid #e5e7eb;
             font-size: 14px;
-            margin-bottom: 20px;
             resize: vertical;
         }
 
-        .drop-zone {
-            border: 2px dashed #d1d5db;
-            padding: 25px;
-            border-radius: 12px;
-            text-align: center;
-            color: #6b7280;
-            margin-bottom: 20px;
-            cursor: pointer;
-            transition: 0.2s;
-        }
-
-        .drop-zone.dragover {
-            border-color: #111827;
-            background: #f9fafb;
-        }
-
-        input[type="file"] {
-            display: none;
+        input[type=file] {
+            margin-top: 10px;
         }
 
         button {
             width: 100%;
-            padding: 14px;
-            background: #111827;
-            color: white;
+            margin-top: 20px;
+            padding: 16px;
             border: none;
-            border-radius: 10px;
+            border-radius: 12px;
+            background: #4f46e5;
+            color: white;
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s ease;
         }
 
         button:hover {
-            background: #000;
-            transform: translateY(-1px);
-        }
-
-        .spinner {
-            display: none;
-            margin: 20px auto;
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #111827;
-            border-radius: 50%;
-            width: 28px;
-            height: 28px;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            background: #4338ca;
         }
 
         .output {
-            margin-top: 30px;
+            margin-top: 40px;
+        }
+
+        .card {
             background: #f9fafb;
+            border: 1px solid #e5e7eb;
             padding: 20px;
             border-radius: 12px;
-            white-space: pre-wrap;
-            border: 1px solid #e5e7eb;
+            line-height: 1.7;
+            font-size: 15px;
         }
 
         .error {
             margin-top: 20px;
-            color: #dc2626;
-            text-align: center;
-            font-weight: 500;
+            padding: 12px;
+            background: #fee2e2;
+            color: #991b1b;
+            border-radius: 10px;
         }
 
-        footer {
-            margin-top: 40px;
-            text-align: center;
-            color: #9ca3af;
-            font-size: 14px;
+        @media (max-width: 640px) {
+            .container {
+                padding: 24px;
+            }
         }
     </style>
 </head>
+
 <body>
 
-<div class="wrapper">
-    <h1>AI Resume Improver</h1>
+<div class="container">
+    <h1>✨ AI Resume Improver</h1>
     <p class="subtitle">
-        Instantly strengthen your resume bullets with AI.
+        Transform your resume bullets into strong, recruiter-ready statements.
     </p>
 
-    <div class="card">
-        <form method="POST" enctype="multipart/form-data" id="resumeForm">
+    <form method="POST" enctype="multipart/form-data">
+        <textarea name="resume_text" placeholder="Paste your resume text here..."></textarea>
 
-            <textarea name="resume_text" placeholder="Paste your resume here..."></textarea>
+        <p><strong>Or upload your resume (PDF):</strong></p>
+        <input type="file" name="resume_pdf" accept=".pdf">
 
-            <div class="drop-zone" id="dropZone">
-                Drag & drop your PDF here or click to upload
+        <button type="submit">🚀 Improve My Resume</button>
+    </form>
+
+    {% if error %}
+        <div class="error">{{ error }}</div>
+    {% endif %}
+
+    {% if improved %}
+    <div class="output">
+
+        <div style="display:grid; gap:24px;">
+
+            <div>
+                <h3 style="margin-bottom:10px; color:#6b7280; font-weight:600;">
+                    📝 Your Original
+                </h3>
+                <div class="card">
+                    {{ original | safe }}
+                </div>
             </div>
 
-            <input type="file" name="resume_pdf" id="fileInput" accept=".pdf">
+            <div>
+                <h3 style="margin-bottom:10px; color:#111827; font-weight:700;">
+                    ✨ AI Improved Version
+                </h3>
+                <div class="card">
+                    {{ improved | safe }}
+                </div>
+            </div>
 
-            <button type="submit">Improve Resume</button>
-
-            <div class="spinner" id="spinner"></div>
-        </form>
-
-        {% if error %}
-        <div class="error">{{ error }}</div>
-        {% endif %}
-
-        {% if improved %}
-        <div class="output">
-{{ improved }}
         </div>
-        {% endif %}
+
     </div>
-
-    <footer>
-        Built by Lucky • AI-powered resume optimization
-    </footer>
+    {% endif %}
 </div>
-
-<script>
-const dropZone = document.getElementById("dropZone");
-const fileInput = document.getElementById("fileInput");
-const form = document.getElementById("resumeForm");
-const spinner = document.getElementById("spinner");
-
-dropZone.addEventListener("click", () => fileInput.click());
-
-dropZone.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    dropZone.classList.add("dragover");
-});
-
-dropZone.addEventListener("dragleave", () => {
-    dropZone.classList.remove("dragover");
-});
-
-dropZone.addEventListener("drop", (e) => {
-    e.preventDefault();
-    dropZone.classList.remove("dragover");
-
-    if (e.dataTransfer.files.length > 0) {
-        fileInput.files = e.dataTransfer.files;
-        dropZone.textContent = "PDF uploaded ✓";
-    }
-});
-
-form.addEventListener("submit", () => {
-    spinner.style.display = "block";
-});
-</script>
 
 </body>
 </html>
 """
 
-# ================================
-# Helper: extract text from PDF
-# ================================
-def extract_text_from_pdf(file_storage):
-    try:
-        reader = PdfReader(file_storage)
-        text = ""
-        for page in reader.pages:
-            extracted = page.extract_text()
-            if extracted:
-                text += extracted + "\\n"
-        return text.strip()
-    except Exception:
-        return ""
-
-# ================================
-# Routes
-# ================================
+# =========================
+# 🚀 ROUTE
+# =========================
 @app.route("/", methods=["GET", "POST"])
 def home():
     improved = None
+    original = None
     error = None
 
     if request.method == "POST":
         resume_text = request.form.get("resume_text", "").strip()
         pdf_file = request.files.get("resume_pdf")
 
-        # ✅ Robust PDF handling (FIXED)
-        if pdf_file and pdf_file.filename:
+        # If PDF uploaded, override text
+        if pdf_file and pdf_file.filename.endswith(".pdf"):
             extracted = extract_text_from_pdf(pdf_file)
             if extracted:
                 resume_text = extracted
+            else:
+                error = "❌ Could not read the uploaded PDF."
 
         if not resume_text:
-            error = "Please paste text or upload a valid PDF."
+            error = "⚠️ Please paste resume text or upload a PDF."
         else:
             try:
-                improved = improve_resume(resume_text)
+                improved_raw = improve_resume(resume_text)
+
+                # 🔥 Markdown rendering (BIG UX WIN)
+                improved = markdown.markdown(improved_raw)
+                original = markdown.markdown(resume_text)
+
             except Exception as e:
                 error = f"Error: {str(e)}"
 
     return render_template_string(
         HTML_TEMPLATE,
         improved=improved,
+        original=original,
         error=error
     )
 
-# ================================
-# Render-compatible run
-# ================================
+# =========================
+# 🔴 CRITICAL: Render port binding
+# =========================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
