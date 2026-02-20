@@ -9,9 +9,9 @@ import markdown
 load_dotenv()
 app = Flask(__name__)
 
-# ===========================
+# =============================
 # PDF text extraction
-# ===========================
+# =============================
 def extract_text_from_pdf(file):
     try:
         reader = PdfReader(file)
@@ -24,52 +24,56 @@ def extract_text_from_pdf(file):
     except:
         return ""
 
-# ===========================
-# Diff highlight helper
-# ===========================
-def make_diff_html(orig_html, improved_html):
+# =============================
+# Build diff with context
+# =============================
+def diff_with_context(orig_html, imp_html):
     orig_lines = orig_html.splitlines()
-    imp_lines = improved_html.splitlines()
-    diff_lines = difflib.ndiff(orig_lines, imp_lines)
+    imp_lines = imp_html.splitlines()
+    diff = list(difflib.ndiff(orig_lines, imp_lines))
 
-    highlighted = []
-    for line in diff_lines:
+    context_diff = []
+    last_section = None
+
+    for line in diff:
         if line.startswith("+ "):
-            # only highlight added/changed lines
-            highlighted.append(f"<div style='background:#fff9c4;padding:4px;border-radius:4px;'> {line[2:]} </div>")
-        elif line.startswith("  "):
-            # unchanged lines
-            highlighted.append(line[2:])
-    return "<br>".join(highlighted)
+            text = line[2:].strip()
+            # only include non-empty additions
+            if text:
+                context_diff.append(text)
 
-# ===========================
-# HTML Template
-# ===========================
+    # join them back with <br> for HTML
+    return "<br>".join(context_diff)
+
+# =============================
+# HTML TEMPLATE
+# =============================
+
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>AI Resume Improver</title>
+    <title>AI Resume Diff</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
             background: #f5f7fb;
-            margin: 0;
-            padding: 0 16px;
+            padding: 24px 12px;
             color: #111827;
         }
         .container {
-            max-width: 980px;
-            margin: 28px auto;
-            background: #fff;
-            padding: 40px;
+            max-width: 960px;
+            margin: auto;
+            background: white;
+            padding: 36px;
             border-radius: 18px;
-            box-shadow: 0 18px 60px rgba(0,0,0,0.08);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.08);
         }
         h1 {
             text-align: center;
-            font-size: 40px;
+            font-size: 38px;
             margin-bottom: 8px;
         }
         .subtitle {
@@ -85,15 +89,16 @@ HTML_TEMPLATE = """
             border-radius: 12px;
             border: 1px solid #e2e8f0;
             font-size: 15px;
-            margin-bottom: 16px;
+            margin-bottom: 18px;
+            resize: vertical;
         }
         .drop-zone {
-            padding: 22px;
+            padding: 24px;
             border: 2px dashed #cbd5e1;
             border-radius: 14px;
             text-align: center;
             color: #64748b;
-            margin-bottom: 16px;
+            margin-bottom: 18px;
             cursor: pointer;
         }
         .drop-zone.dragover {
@@ -102,21 +107,21 @@ HTML_TEMPLATE = """
         }
         .btn {
             width: 100%;
-            padding: 14px;
+            padding: 16px;
             font-size: 16px;
             font-weight: 600;
             border: none;
-            border-radius: 12px;
+            border-radius: 14px;
             color: white;
             background: linear-gradient(90deg, #6366f1, #8b5cf6);
             cursor: pointer;
         }
         .spinner {
-            display: none;
             text-align: center;
             margin-top: 18px;
             font-weight: 600;
             color: #6366f1;
+            display: none;
         }
         .diff-container {
             display: flex;
@@ -134,44 +139,51 @@ HTML_TEMPLATE = """
         .diff-box {
             background: #fafafa;
             border: 1px solid #e5e7eb;
-            padding: 22px;
+            padding: 20px;
             border-radius: 14px;
             font-size: 15px;
             line-height: 1.6;
             white-space: pre-wrap;
             overflow-x: auto;
         }
+        .hl {
+            background: #fff9c4;
+            padding: 4px;
+            border-radius: 4px;
+            display: inline-block;
+        }
     </style>
 </head>
 
 <body>
 <div class="container">
-    <h1>✨ AI Resume Improver</h1>
-    <div class="subtitle">Transform your resume into recruiter-ready excellence.</div>
+
+    <h1>✨ AI Resume Diff View</h1>
+    <div class="subtitle">Showing newly added / changed lines in your improved resume</div>
 
     <form method="POST" enctype="multipart/form-data" onsubmit="showSpinner()">
         <textarea name="resume_text" placeholder="Paste your resume text here..."></textarea>
 
         <div class="drop-zone" id="dropZone">
-            Drag & drop a PDF here<br>or click to select
+            Drag & drop a PDF here
             <br><br>
             <input type="file" name="resume_pdf" accept=".pdf">
         </div>
 
-        <button class="btn">🚀 Improve + Show Changes</button>
+        <button class="btn">🚀 Improve + Highlight</button>
     </form>
 
-    <div class="spinner" id="spinner">⚡ Generating improvements...</div>
+    <div class="spinner" id="spinner">⚡ Working on it…</div>
 
     {% if diff_html %}
     <div class="diff-container">
         <div class="diff-col">
-            <div class="diff-title">📝 Original</div>
+            <div class="diff-title">📝 Original Resume</div>
             <div class="diff-box">{{ original | safe }}</div>
         </div>
 
         <div class="diff-col">
-            <div class="diff-title">✨ Highlighted Changes</div>
+            <div class="diff-title">✨ Added / Changed Lines</div>
             <div class="diff-box">{{ diff_html | safe }}</div>
         </div>
     </div>
@@ -227,12 +239,13 @@ def home():
             try:
                 improved_text = improve_resume(text)
 
-                # Convert to HTML
                 orig_html = markdown.markdown(text)
                 imp_html = markdown.markdown(improved_text)
 
-                diff_html = make_diff_html(orig_html, imp_html)
+                highlighted = diff_with_context(orig_html, imp_html)
+
                 original = orig_html
+                diff_html = highlighted
 
             except Exception as e:
                 error = f"Error: {str(e)}"
