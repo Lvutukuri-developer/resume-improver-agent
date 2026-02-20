@@ -9,7 +9,9 @@ import markdown
 load_dotenv()
 app = Flask(__name__)
 
-# PDF text extractor
+# ===========================
+# PDF text extraction
+# ===========================
 def extract_text_from_pdf(file):
     try:
         reader = PdfReader(file)
@@ -22,29 +24,33 @@ def extract_text_from_pdf(file):
     except:
         return ""
 
-# Diff highlighting
-def highlight_diff(orig_html, improved_html):
+# ===========================
+# Diff highlight helper
+# ===========================
+def make_diff_html(orig_html, improved_html):
     orig_lines = orig_html.splitlines()
     imp_lines = improved_html.splitlines()
-    diff = difflib.ndiff(orig_lines, imp_lines)
+    diff_lines = difflib.ndiff(orig_lines, imp_lines)
 
-    result = []
-    for line in diff:
+    highlighted = []
+    for line in diff_lines:
         if line.startswith("+ "):
-            # highlight additions
-            result.append(f"<div style='background: #fff9c4; padding:4px; border-radius:4px;'>{line[2:]}</div>")
+            # only highlight added/changed lines
+            highlighted.append(f"<div style='background:#fff9c4;padding:4px;border-radius:4px;'> {line[2:]} </div>")
         elif line.startswith("  "):
-            result.append(line[2:])
-        # removed lines aren't shown
-    return "<br>".join(result)
+            # unchanged lines
+            highlighted.append(line[2:])
+    return "<br>".join(highlighted)
 
-# HTML
+# ===========================
+# HTML Template
+# ===========================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
     <title>AI Resume Improver</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
@@ -54,22 +60,22 @@ HTML_TEMPLATE = """
             color: #111827;
         }
         .container {
-            max-width: 960px;
-            margin: 30px auto;
+            max-width: 980px;
+            margin: 28px auto;
             background: #fff;
             padding: 40px;
             border-radius: 18px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.08);
+            box-shadow: 0 18px 60px rgba(0,0,0,0.08);
         }
         h1 {
-            font-size: 38px;
             text-align: center;
+            font-size: 40px;
             margin-bottom: 8px;
         }
         .subtitle {
             text-align: center;
             color: #64748b;
-            margin-bottom: 30px;
+            margin-bottom: 28px;
             font-size: 16px;
         }
         textarea {
@@ -80,7 +86,6 @@ HTML_TEMPLATE = """
             border: 1px solid #e2e8f0;
             font-size: 15px;
             margin-bottom: 16px;
-            resize: vertical;
         }
         .drop-zone {
             padding: 22px;
@@ -107,28 +112,34 @@ HTML_TEMPLATE = """
             cursor: pointer;
         }
         .spinner {
+            display: none;
             text-align: center;
-            margin-top: 16px;
+            margin-top: 18px;
             font-weight: 600;
             color: #6366f1;
-            display: none;
         }
         .diff-container {
             display: flex;
             gap: 24px;
-            margin-top: 36px;
+            margin-top: 40px;
         }
         .diff-col {
             width: 50%;
         }
+        .diff-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
         .diff-box {
-            border: 1px solid #e5e7eb;
-            overflow: auto;
             background: #fafafa;
-            padding: 18px;
-            border-radius: 12px;
+            border: 1px solid #e5e7eb;
+            padding: 22px;
+            border-radius: 14px;
             font-size: 15px;
             line-height: 1.6;
+            white-space: pre-wrap;
+            overflow-x: auto;
         }
     </style>
 </head>
@@ -136,30 +147,31 @@ HTML_TEMPLATE = """
 <body>
 <div class="container">
     <h1>✨ AI Resume Improver</h1>
-    <div class="subtitle">Transform your resume into recruiter-ready quality.</div>
+    <div class="subtitle">Transform your resume into recruiter-ready excellence.</div>
 
     <form method="POST" enctype="multipart/form-data" onsubmit="showSpinner()">
         <textarea name="resume_text" placeholder="Paste your resume text here..."></textarea>
 
         <div class="drop-zone" id="dropZone">
-            Drag & drop your resume PDF here<br>or click below to upload
+            Drag & drop a PDF here<br>or click to select
             <br><br>
             <input type="file" name="resume_pdf" accept=".pdf">
         </div>
 
-        <button class="btn">🚀 Improve + Highlight</button>
+        <button class="btn">🚀 Improve + Show Changes</button>
     </form>
 
-    <div class="spinner" id="spinner">⚡ Analyzing...</div>
+    <div class="spinner" id="spinner">⚡ Generating improvements...</div>
 
     {% if diff_html %}
     <div class="diff-container">
         <div class="diff-col">
-            <h3 style="font-size:18px;color:#4b5563;">📝 Your Original</h3>
+            <div class="diff-title">📝 Original</div>
             <div class="diff-box">{{ original | safe }}</div>
         </div>
+
         <div class="diff-col">
-            <h3 style="font-size:18px;color:#111827;">✨ AI Improved Highlights</h3>
+            <div class="diff-title">✨ Highlighted Changes</div>
             <div class="diff-box">{{ diff_html | safe }}</div>
         </div>
     </div>
@@ -170,15 +182,19 @@ HTML_TEMPLATE = """
 function showSpinner() {
     document.getElementById("spinner").style.display = "block";
 }
+
 const dropZone = document.getElementById("dropZone");
-dropZone.addEventListener("dragover", e => {
+
+dropZone.addEventListener("dragover", (e) => {
     e.preventDefault();
     dropZone.classList.add("dragover");
 });
+
 dropZone.addEventListener("dragleave", () => {
     dropZone.classList.remove("dragover");
 });
-dropZone.addEventListener("drop", e => {
+
+dropZone.addEventListener("drop", (e) => {
     e.preventDefault();
     dropZone.classList.remove("dragover");
     const fileInput = dropZone.querySelector("input[type=file]");
@@ -206,17 +222,17 @@ def home():
                 text = extracted
 
         if not text:
-            error = "⚠️ Paste text or upload a PDF first."
+            error = "⚠️ Please paste text or upload a PDF first."
         else:
             try:
-                improved = improve_resume(text)
+                improved_text = improve_resume(text)
 
-                # HTML-render the markdown
-                original_html = markdown.markdown(text)
-                improved_html = markdown.markdown(improved)
+                # Convert to HTML
+                orig_html = markdown.markdown(text)
+                imp_html = markdown.markdown(improved_text)
 
-                diff_html = highlight_diff(original_html, improved_html)
-                original = original_html
+                diff_html = make_diff_html(orig_html, imp_html)
+                original = orig_html
 
             except Exception as e:
                 error = f"Error: {str(e)}"
