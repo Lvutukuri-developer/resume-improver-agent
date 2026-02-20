@@ -11,6 +11,9 @@ import markdown
 load_dotenv()
 app = Flask(__name__)
 
+# ==========================
+# Text Extraction
+# ==========================
 def extract_text_from_pdf(file):
     try:
         reader = PdfReader(file)
@@ -19,32 +22,45 @@ def extract_text_from_pdf(file):
         return ""
 
 # ==========================================
-# NEW: Surgical Word-Level Diff for HTML
+# Surgical Word-Level Diff (Structured)
 # ==========================================
 def generate_highlighted_html(orig, imp):
-    # Strip markdown artifacts before diffing to avoid highlighting syntax
+    # 1. Clean up AI markdown artifacts
     imp_clean = imp.replace("```markdown", "").replace("```", "").strip()
     
-    orig_words = orig.split()
-    imp_words = imp_clean.split()
+    # 2. Split by lines to preserve Markdown structure (headers, bullets)
+    orig_lines = [line.strip() for line in orig.splitlines() if line.strip()]
+    imp_lines = imp_clean.splitlines()
     
-    sm = difflib.SequenceMatcher(None, orig_words, imp_words)
-    output = []
-
-    for tag, i1, i2, j1, j2 in sm.get_opcodes():
-        word_block = " ".join(imp_words[j1:j2])
-        if tag in ('replace', 'insert'):
-            # Wrap specific word changes in our highlight class
-            output.append(f'<span class="hl">{word_block}</span>')
+    final_output_lines = []
+    
+    for line in imp_lines:
+        stripped_line = line.strip()
+        if not stripped_line:
+            final_output_lines.append("")
+            continue
+            
+        # If the exact line exists in the original, keep it clean
+        if stripped_line in orig_lines:
+            final_output_lines.append(line)
         else:
-            output.append(word_block)
+            # If changed, highlight words but protect Markdown symbols
+            words = line.split()
+            processed_words = []
+            for word in words:
+                # Don't highlight structural symbols like ###, -, or **
+                if re.match(r'^(#+|\*+|-)$', word) or word.startswith('**') or word.endswith('**'):
+                    processed_words.append(word)
+                else:
+                    processed_words.append(f'<span class="hl">{word}</span>')
+            final_output_lines.append(" ".join(processed_words))
 
-    # Join words and then convert to Markdown to handle headers/bullets
-    combined_text = " ".join(output)
-    return markdown.markdown(combined_text)
+    # 3. Convert reconstructed Markdown back to HTML
+    combined_md = "\n".join(final_output_lines)
+    return markdown.markdown(combined_md)
 
 # ==========================
-# Apple Flagship UI (V3)
+# Apple Flagship UI (V4)
 # ==========================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -60,9 +76,8 @@ HTML_TEMPLATE = """
             --text-primary: #1d1d1f;
             --text-secondary: #86868b;
             --glass: rgba(255, 255, 255, 0.8);
-            /* Soft Amber Highlight - subtle and premium */
-            --hl-bg: rgba(255, 214, 0, 0.25);
-            --hl-border: rgba(255, 184, 0, 0.4);
+            --hl-bg: rgba(0, 113, 227, 0.12);
+            --hl-border: rgba(0, 113, 227, 0.3);
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
@@ -71,10 +86,10 @@ HTML_TEMPLATE = """
             margin: 0;
             -webkit-font-smoothing: antialiased;
         }
-        .container { max-width: 1200px; margin: 0 auto; padding: 60px 20px; }
-        .header-section { text-align: center; margin-bottom: 50px; }
-        h1 { font-size: 56px; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
-        .subtitle { font-size: 24px; color: var(--text-secondary); margin-top: 10px; }
+        .container { max-width: 1240px; margin: 0 auto; padding: 40px 20px; }
+        .header-section { text-align: center; margin-bottom: 40px; }
+        h1 { font-size: 52px; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
+        .subtitle { font-size: 22px; color: var(--text-secondary); margin-top: 10px; }
 
         .input-card {
             background: var(--glass);
@@ -83,12 +98,12 @@ HTML_TEMPLATE = """
             padding: 30px;
             border: 1px solid rgba(0,0,0,0.05);
             box-shadow: 0 10px 30px rgba(0,0,0,0.02);
-            margin-bottom: 50px;
+            margin-bottom: 40px;
         }
         .drop-zone {
             border: 2px dashed #d2d2d7;
             border-radius: 18px;
-            padding: 40px;
+            padding: 30px;
             text-align: center;
             cursor: pointer;
             background: white;
@@ -97,40 +112,43 @@ HTML_TEMPLATE = """
         .drop-zone:hover { border-color: var(--apple-blue); }
         
         textarea {
-            width: 100%; height: 100px; margin-top: 20px; padding: 15px;
+            width: 100%; height: 80px; margin-top: 20px; padding: 15px;
             border-radius: 14px; border: 1px solid #d2d2d7; font-family: inherit;
-            resize: none; box-sizing: border-box;
+            resize: none; box-sizing: border-box; font-size: 15px;
         }
         .btn {
             background: var(--apple-blue); color: white; border: none;
             padding: 16px 0; font-size: 17px; font-weight: 600;
-            border-radius: 980px; width: 100%; margin-top: 20px;
+            border-radius: 980px; width: 100%; margin-top: 15px;
             cursor: pointer; transition: 0.2s;
         }
+        .btn:hover { opacity: 0.9; transform: scale(1.005); }
 
-        .workspace { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 40px; }
+        .workspace { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
         .viewer-box { display: flex; flex-direction: column; }
-        .label { font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+        .label { font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
         .paper {
-            background: white; border-radius: 12px; border: 1px solid #d2d2d7;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.05); height: 800px; overflow: hidden;
+            background: white; border-radius: 14px; border: 1px solid #d2d2d7;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.06); height: 850px; overflow: hidden;
         }
         
-        /* The Highlight Style */
+        /* Structured Result Styling */
+        .improved-content {
+            padding: 50px; overflow-y: auto; height: 100%;
+            font-family: "Times New Roman", Times, serif; font-size: 15px;
+            line-height: 1.5; color: #111; box-sizing: border-box;
+        }
+        .improved-content h1, .improved-content h2, .improved-content h3 {
+            font-family: -apple-system, sans-serif;
+            color: #000; border-bottom: 1px solid #eee; padding-bottom: 4px; margin-top: 20px;
+        }
         .hl {
             background-color: var(--hl-bg);
             border-bottom: 1.5px solid var(--hl-border);
             border-radius: 2px;
-            padding: 1px 0;
-            transition: background-color 0.3s ease;
+            padding: 0 1px;
         }
-        .hl:hover { background-color: rgba(255, 214, 0, 0.4); }
 
-        .improved-content {
-            padding: 50px; overflow-y: auto; height: 100%;
-            font-family: "Times New Roman", Times, serif; font-size: 15px;
-            line-height: 1.6; color: #111; box-sizing: border-box;
-        }
         #spinner { display: none; text-align: center; margin-top: 15px; color: var(--apple-blue); font-weight: 600; }
     </style>
 </head>
@@ -139,7 +157,7 @@ HTML_TEMPLATE = """
 <div class="container">
     <div class="header-section">
         <h1>Your resume, perfected.</h1>
-        <p class="subtitle">Highlighting impact. Maximizing visibility.</p>
+        <p class="subtitle">Flagship AI refinement.</p>
     </div>
 
     <div class="input-card">
@@ -149,10 +167,10 @@ HTML_TEMPLATE = """
                 <span>or click to browse</span>
                 <input type="file" id="pdf-input" name="resume_pdf" hidden accept=".pdf">
             </div>
-            <textarea name="resume_text" placeholder="Or paste your resume content here..."></textarea>
+            <textarea name="resume_text" placeholder="Or paste your resume text..."></textarea>
             <button type="submit" class="btn" onclick="showLoad()">Refine Resume</button>
         </form>
-        <div id="spinner">✨ Polishing your details...</div>
+        <div id="spinner">✨ Crafting your professional narrative...</div>
     </div>
 
     {% if improved_html %}
@@ -195,15 +213,15 @@ def home():
         text = request.form.get("resume_text", "").strip()
 
         if pdf_file and pdf_file.filename:
-            raw_content = pdf_file.read()
-            pdf_base64 = base64.b64encode(raw_content).decode('utf-8')
+            raw_pdf_data = pdf_file.read()
+            pdf_base64 = base64.b64encode(raw_pdf_data).decode('utf-8')
             pdf_file.seek(0)
             text = extract_text_from_pdf(pdf_file)
 
         if text:
-            # 1. Get AI raw output
+            # 1. Get raw improvement from your agent
             raw_improved = improve_resume(text)
-            # 2. Generate HTML with surgical highlights
+            # 2. Process highlights while keeping structure
             improved_html = generate_highlighted_html(text, raw_improved)
 
     return render_template_string(HTML_TEMPLATE, 
