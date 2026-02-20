@@ -31,15 +31,15 @@ HTML_TEMPLATE = """
 <html>
 <head>
     <title>AI Resume Improver</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: linear-gradient(180deg, #f9fafb 0%, #eef2ff 100%);
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+            background: linear-gradient(180deg, #f5f7fb 0%, #eef2f7 100%);
             margin: 0;
-            padding: 40px 20px;
-            color: #111827;
+            padding: 40px 16px;
+            color: #0f172a;
         }
 
         .container {
@@ -53,13 +53,13 @@ HTML_TEMPLATE = """
 
         h1 {
             text-align: center;
-            font-size: 36px;
-            margin-bottom: 10px;
+            font-size: 40px;
+            margin-bottom: 8px;
         }
 
         .subtitle {
             text-align: center;
-            color: #6b7280;
+            color: #64748b;
             margin-bottom: 30px;
         }
 
@@ -68,114 +68,132 @@ HTML_TEMPLATE = """
             height: 180px;
             padding: 16px;
             border-radius: 12px;
-            border: 1px solid #e5e7eb;
-            font-size: 14px;
+            border: 1px solid #e2e8f0;
+            font-size: 15px;
             resize: vertical;
         }
 
-        input[type=file] {
-            margin-top: 10px;
+        .drop-zone {
+            margin-top: 16px;
+            padding: 24px;
+            border: 2px dashed #cbd5e1;
+            border-radius: 14px;
+            text-align: center;
+            color: #64748b;
+            transition: all 0.2s ease;
         }
 
-        button {
-            width: 100%;
+        .drop-zone.dragover {
+            background: #f1f5f9;
+            border-color: #6366f1;
+        }
+
+        .btn {
             margin-top: 20px;
+            width: 100%;
             padding: 16px;
-            border: none;
-            border-radius: 12px;
-            background: #4f46e5;
-            color: white;
             font-size: 16px;
             font-weight: 600;
+            border: none;
+            border-radius: 14px;
+            color: white;
+            background: linear-gradient(90deg, #6366f1, #8b5cf6);
             cursor: pointer;
         }
 
-        button:hover {
-            background: #4338ca;
+        .spinner {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+            font-weight: 600;
+            color: #6366f1;
         }
 
-        .output {
-            margin-top: 40px;
-        }
-
-        .card {
-            background: #f9fafb;
-            border: 1px solid #e5e7eb;
-            padding: 20px;
-            border-radius: 12px;
-            line-height: 1.7;
+        .result-box {
+            margin-top: 30px;
+            padding: 24px;
+            border-radius: 14px;
+            background: #f8fafc;
+            white-space: pre-wrap;
+            line-height: 1.6;
             font-size: 15px;
         }
 
-        .error {
-            margin-top: 20px;
-            padding: 12px;
-            background: #fee2e2;
-            color: #991b1b;
-            border-radius: 10px;
-        }
-
-        @media (max-width: 640px) {
-            .container {
-                padding: 24px;
-            }
+        .section-title {
+            margin-top: 30px;
+            font-weight: 700;
+            font-size: 18px;
         }
     </style>
 </head>
 
 <body>
-
 <div class="container">
-    <h1>✨ AI Resume Improver</h1>
-    <p class="subtitle">
-        Transform your resume bullets into strong, recruiter-ready statements.
-    </p>
 
-    <form method="POST" enctype="multipart/form-data">
+    <h1>✨ AI Resume Improver</h1>
+    <div class="subtitle">
+        Transform your resume bullets into strong, recruiter-ready statements.
+    </div>
+
+    <form method="POST" enctype="multipart/form-data" onsubmit="showSpinner()">
+
         <textarea name="resume_text" placeholder="Paste your resume text here..."></textarea>
 
-        <p><strong>Or upload your resume (PDF):</strong></p>
-        <input type="file" name="resume_pdf" accept=".pdf">
+        <div class="drop-zone" id="dropZone">
+            Drag & drop your resume PDF here<br>
+            or click below to upload
+            <br><br>
+            <input type="file" name="resume_pdf" accept=".pdf">
+        </div>
 
-        <button type="submit">🚀 Improve My Resume</button>
+        <button class="btn">🚀 Improve My Resume</button>
     </form>
 
-    {% if error %}
-        <div class="error">{{ error }}</div>
+    <div class="spinner" id="spinner">
+        ⚡ AI is analyzing your resume…
+    </div>
+
+    {% if original %}
+        <div class="section-title">📝 Your Original</div>
+        <div class="result-box">{{ original }}</div>
     {% endif %}
 
     {% if improved %}
-    <div class="output">
-
-        <div style="display:grid; gap:24px;">
-
-            <div>
-                <h3 style="margin-bottom:10px; color:#6b7280; font-weight:600;">
-                    📝 Your Original
-                </h3>
-                <div class="card">
-                    {{ original | safe }}
-                </div>
-            </div>
-
-            <div>
-                <h3 style="margin-bottom:10px; color:#111827; font-weight:700;">
-                    ✨ AI Improved Version
-                </h3>
-                <div class="card">
-                    {{ improved | safe }}
-                </div>
-            </div>
-
-        </div>
-
-    </div>
+        <div class="section-title">✨ AI Improved Version</div>
+        <div class="result-box">{{ improved }}</div>
     {% endif %}
+
 </div>
+
+<script>
+function showSpinner() {
+    document.getElementById("spinner").style.display = "block";
+}
+
+const dropZone = document.getElementById("dropZone");
+
+dropZone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropZone.classList.add("dragover");
+});
+
+dropZone.addEventListener("dragleave", () => {
+    dropZone.classList.remove("dragover");
+});
+
+dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("dragover");
+
+    const fileInput = dropZone.querySelector("input[type=file]");
+    fileInput.files = e.dataTransfer.files;
+});
+</script>
 
 </body>
 </html>
 """
+
 
 # =========================
 # 🚀 ROUTE
