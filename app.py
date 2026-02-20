@@ -1,17 +1,15 @@
 import os
-import difflib
-import re
+import base64
 from flask import Flask, request, render_template_string
 from dotenv import load_dotenv
 from agent import improve_resume
 from PyPDF2 import PdfReader
-import markdown
 
 load_dotenv()
 app = Flask(__name__)
 
 # ==========================
-# Extract text from PDF
+# Extract text for the AI
 # ==========================
 def extract_text_from_pdf(file):
     try:
@@ -21,37 +19,7 @@ def extract_text_from_pdf(file):
         return ""
 
 # ==========================
-# Normalize original resume
-# ==========================
-def normalize_resume_text(text: str) -> str:
-    if not text:
-        return ""
-    lines = [line.strip() for line in text.splitlines()]
-    return "\n".join([l for l in lines if l])
-
-# ==========================
-# Surgical Word-Level Diff
-# ==========================
-def generate_surgical_diff(orig, imp):
-    orig_words = orig.split()
-    imp_words = imp.split()
-    
-    sm = difflib.SequenceMatcher(None, orig_words, imp_words)
-    output = []
-
-    for tag, i1, i2, j1, j2 in sm.get_opcodes():
-        if tag == 'equal':
-            output.append(" ".join(imp_words[j1:j2]))
-        elif tag in ('replace', 'insert'):
-            changed_text = " ".join(imp_words[j1:j2])
-            output.append(f'<span class="hl">{changed_text}</span>')
-
-    final_text = " ".join(output)
-    # Convert double newlines to breaks for proper spacing
-    return final_text.replace("\n", "<br>")
-
-# ==========================
-# Apple Flagship UI (V2)
+# Apple-Style Layout
 # ==========================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -59,220 +27,168 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Resume AI | Pro</title>
+    <title>Resume AI | Desktop View</title>
     <style>
         :root {
             --apple-blue: #0071e3;
             --bg: #f5f5f7;
-            --card-bg: rgba(255, 255, 255, 0.8);
-            --text-primary: #1d1d1f;
-            --text-secondary: #86868b;
-            --highlight: rgba(255, 214, 0, 0.35);
+            --text-main: #1d1d1f;
+            --highlight: rgba(0, 113, 227, 0.15);
         }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
             background-color: var(--bg);
-            color: var(--text-primary);
             margin: 0;
-            line-height: 1.47;
-            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
         }
-        .container {
-            max-width: 1000px;
-            margin: 0 auto;
-            padding: 80px 20px;
-        }
-        h1 {
-            font-size: 56px;
-            font-weight: 700;
-            letter-spacing: -0.015em;
-            text-align: center;
-            margin-bottom: 10px;
-        }
-        .subtitle {
-            font-size: 24px;
-            color: var(--text-secondary);
-            text-align: center;
-            margin-bottom: 50px;
-        }
-
-        /* Apple Style Drag & Drop */
-        .drop-zone {
-            background: var(--card-bg);
+        /* Top Navigation */
+        .nav {
+            background: rgba(255, 255, 255, 0.8);
             backdrop-filter: blur(20px);
-            border: 2px dashed #d2d2d7;
-            border-radius: 20px;
-            padding: 80px 20px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            position: relative;
+            padding: 15px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #d2d2d7;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
         }
-        .drop-zone:hover {
-            border-color: var(--apple-blue);
-            background: #ffffff;
+        .nav-logo { font-weight: 600; font-size: 19px; letter-spacing: -0.5px; }
+        
+        /* Upload Section */
+        .upload-bar {
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
-        .drop-zone.dragover {
-            background: rgba(0, 113, 227, 0.05);
-            border-color: var(--apple-blue);
-            transform: scale(1.01);
-        }
-        .drop-zone p {
-            font-size: 21px;
-            font-weight: 600;
-            margin: 0;
-        }
-        .drop-zone span {
-            color: var(--apple-blue);
-            display: block;
-            font-size: 16px;
-            margin-top: 8px;
-            font-weight: 400;
-        }
-        #file-input { display: none; }
-
-        textarea {
+        .drop-zone {
             width: 100%;
-            height: 100px;
-            margin-top: 24px;
-            padding: 20px;
+            max-width: 600px;
+            background: white;
             border-radius: 18px;
-            border: 1px solid #d2d2d7;
-            font-size: 17px;
-            background: var(--card-bg);
-            box-sizing: border-box;
-            font-family: inherit;
-            resize: none;
-            outline: none;
-        }
-        textarea:focus { border-color: var(--apple-blue); }
-
-        .btn {
-            background: var(--apple-blue);
-            color: white;
-            border: none;
-            padding: 18px 30px;
-            font-size: 17px;
-            font-weight: 600;
-            border-radius: 980px;
-            width: 100%;
-            margin-top: 30px;
+            padding: 30px;
+            text-align: center;
+            border: 2px dashed #d2d2d7;
             cursor: pointer;
-            transition: opacity 0.2s ease;
+            transition: 0.2s;
         }
-        .btn:hover { opacity: 0.9; }
+        .drop-zone:hover { border-color: var(--apple-blue); }
 
+        /* THE SPLIT VIEWPORT */
         .workspace {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            margin-top: 60px;
+            height: calc(100vh - 200px);
+            gap: 20px;
+            padding: 0 20px 40px;
         }
-        .page-card {
-            background: #ffffff;
-            padding: 40px;
-            border-radius: 24px;
-            box-shadow: 0 8px 30px rgba(0,0,0,0.04);
-            font-size: 15px;
-            line-height: 1.6;
-            min-height: 500px;
-            border: 1px solid #e5e5e7;
+        .viewer-container {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
         }
-        .label {
+        .viewer-label {
             font-size: 12px;
-            font-weight: 700;
-            color: var(--text-secondary);
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            margin-bottom: 24px;
-            display: block;
-        }
-        .hl {
-            background: var(--highlight);
-            padding: 1px 0;
-            border-radius: 2px;
-            font-weight: 500;
-        }
-        #spinner {
-            display: none;
-            text-align: center;
-            margin-top: 20px;
-            color: var(--apple-blue);
             font-weight: 600;
+            color: #86868b;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            padding-left: 10px;
         }
+        
+        /* Left Side: Real PDF */
+        .pdf-frame {
+            width: 100%;
+            height: 100%;
+            border-radius: 12px;
+            border: 1px solid #d2d2d7;
+            background: #fff;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+
+        /* Right Side: Virtual Document */
+        .virtual-doc {
+            width: 100%;
+            height: 100%;
+            background: white;
+            border-radius: 12px;
+            border: 1px solid #d2d2d7;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            overflow-y: auto;
+            padding: 50px;
+            box-sizing: border-box;
+            font-family: "Times New Roman", Times, serif; /* Resume Standard */
+            font-size: 14px;
+            line-height: 1.5;
+            color: #000;
+        }
+        .improved-text { white-space: pre-wrap; }
+        
+        /* Highlight Styling */
+        .hl {
+            background-color: #fff9c4;
+            border-bottom: 1px solid #fbc02d;
+            padding: 2px 0;
+        }
+
+        .btn-refine {
+            background: var(--apple-blue);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 980px;
+            border: none;
+            font-weight: 500;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        #loading { display: none; color: var(--apple-blue); margin-top: 10px; font-weight: 500; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h1>Your resume, perfected.</h1>
-    <p class="subtitle">AI-powered refinement for high-impact roles.</p>
-
-    <form id="mainForm" method="POST" enctype="multipart/form-data">
-        <div class="drop-zone" id="dropZone">
-            <p id="drop-text">Drop your PDF here</p>
-            <span>or click to browse your files</span>
-            <input type="file" name="resume_pdf" id="file-input" accept=".pdf">
-        </div>
-
-        <textarea name="resume_text" placeholder="Or paste your resume content here..."></textarea>
-
-        <button type="submit" class="btn" onclick="showLoading()">Refine Resume</button>
-    </form>
-    
-    <div id="spinner">Analyzing your professional profile...</div>
-
-    {% if diff_html %}
-    <div class="workspace">
-        <div class="page-card">
-            <span class="label">Original</span>
-            <div style="white-space: pre-wrap;">{{ original | safe }}</div>
-        </div>
-        <div class="page-card">
-            <span class="label">Optimized Results</span>
-            <div>{{ diff_html | safe }}</div>
-        </div>
-    </div>
-    {% endif %}
+<div class="nav">
+    <div class="nav-logo">ResumeAI Pro</div>
 </div>
 
+<div class="upload-bar">
+    <div class="drop-zone" onclick="document.getElementById('pdf-input').click()">
+        <p id="status-text">Drop your original PDF here to begin</p>
+        <input type="file" id="pdf-input" name="resume_pdf" form="mainForm" hidden accept=".pdf">
+    </div>
+    <form id="mainForm" method="POST" enctype="multipart/form-data">
+        <button type="submit" class="btn-refine" onclick="showLoad()">Analyze & Refine</button>
+    </form>
+    <div id="loading">✨ Crafting your flagship resume...</div>
+</div>
+
+{% if improved_content %}
+<div class="workspace">
+    <div class="viewer-container">
+        <span class="viewer-label">Original Document</span>
+        <iframe class="pdf-frame" src="data:application/pdf;base64,{{ pdf_base64 }}"></iframe>
+    </div>
+
+    <div class="viewer-container">
+        <span class="viewer-label">AI Refined Version</span>
+        <div class="virtual-doc">
+            <div class="improved-text">{{ improved_content | safe }}</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <script>
-    const dropZone = document.getElementById("dropZone");
-    const fileInput = document.getElementById("file-input");
-    const dropText = document.getElementById("drop-text");
+    const fileInput = document.getElementById('pdf-input');
+    const statusText = document.getElementById('status-text');
+    
+    fileInput.onchange = () => {
+        if(fileInput.files[0]) statusText.innerText = "Ready: " + fileInput.files[0].name;
+    };
 
-    // 1. Click to Open File Explorer
-    dropZone.addEventListener("click", () => fileInput.click());
-
-    // 2. Handle File Selection via Explorer
-    fileInput.addEventListener("change", function() {
-        if (this.files.length > 0) {
-            dropText.innerText = "File Selected: " + this.files[0].name;
-            dropZone.style.borderColor = "var(--apple-blue)";
-        }
-    });
-
-    // 3. Handle Drag & Drop Logic
-    dropZone.addEventListener("dragover", e => {
-        e.preventDefault();
-        dropZone.classList.add("dragover");
-    });
-
-    ["dragleave", "drop"].forEach(type => {
-        dropZone.addEventListener(type, () => dropZone.classList.remove("dragover"));
-    });
-
-    dropZone.addEventListener("drop", e => {
-        e.preventDefault();
-        if (e.dataTransfer.files.length > 0) {
-            fileInput.files = e.dataTransfer.files; // Assign dropped file to input
-            dropText.innerText = "File Selected: " + e.dataTransfer.files[0].name;
-            dropZone.style.borderColor = "var(--apple-blue)";
-        }
-    });
-
-    function showLoading() {
-        document.getElementById('spinner').style.display = 'block';
+    function showLoad() {
+        document.getElementById('loading').style.display = 'block';
     }
 </script>
 
@@ -282,26 +198,31 @@ HTML_TEMPLATE = """
 
 @app.route("/", methods=["GET", "POST"])
 def home():
-    original, diff_html, error = None, None, None
+    improved_content = None
+    pdf_base64 = None
 
     if request.method == "POST":
-        text = request.form.get("resume_text", "").strip()
         pdf_file = request.files.get("resume_pdf")
-
         if pdf_file and pdf_file.filename:
+            # 1. Read file for base64 display (The "Before" PDF)
+            file_content = pdf_file.read()
+            pdf_base64 = base64.b64encode(file_content).decode('utf-8')
+            
+            # 2. Reset pointer and extract text for AI
+            pdf_file.seek(0)
             text = extract_text_from_pdf(pdf_file)
+            
+            # 3. Get AI Improvement
+            improved_text = improve_resume(text)
+            
+            # 4. Simple formatting for the "After" View
+            # Note: You can add logic here to wrap specific keywords in <span class="hl">
+            improved_content = improved_text.replace("\n", "<br>")
 
-        if text:
-            try:
-                improved_text = improve_resume(text)
-                clean_original = normalize_resume_text(text)
-                diff_html = generate_surgical_diff(clean_original, improved_text)
-                original = clean_original
-            except Exception as e:
-                error = str(e)
-
-    return render_template_string(HTML_TEMPLATE, original=original, diff_html=diff_html, error=error)
+    return render_template_string(HTML_TEMPLATE, 
+                                 improved_content=improved_content, 
+                                 pdf_base64=pdf_base64)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port)
