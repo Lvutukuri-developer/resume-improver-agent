@@ -12,7 +12,7 @@ load_dotenv()
 app = Flask(__name__)
 
 # ================================
-# Modern UI Template
+# Premium UI Template
 # ================================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -32,13 +32,13 @@ HTML_TEMPLATE = """
 
         .wrapper {
             max-width: 900px;
-            margin: 80px auto;
+            margin: 70px auto;
             padding: 0 20px;
             text-align: center;
         }
 
         h1 {
-            font-size: 40px;
+            font-size: 42px;
             font-weight: 700;
             margin-bottom: 10px;
         }
@@ -68,8 +68,24 @@ HTML_TEMPLATE = """
             resize: vertical;
         }
 
+        .drop-zone {
+            border: 2px dashed #d1d5db;
+            padding: 25px;
+            border-radius: 12px;
+            text-align: center;
+            color: #6b7280;
+            margin-bottom: 20px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .drop-zone.dragover {
+            border-color: #111827;
+            background: #f9fafb;
+        }
+
         input[type="file"] {
-            margin-bottom: 24px;
+            display: none;
         }
 
         button {
@@ -88,6 +104,22 @@ HTML_TEMPLATE = """
         button:hover {
             background: #000;
             transform: translateY(-1px);
+        }
+
+        .spinner {
+            display: none;
+            margin: 20px auto;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #111827;
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
 
         .output {
@@ -123,13 +155,19 @@ HTML_TEMPLATE = """
     </p>
 
     <div class="card">
-        <form method="POST" enctype="multipart/form-data">
+        <form method="POST" enctype="multipart/form-data" id="resumeForm">
+
             <textarea name="resume_text" placeholder="Paste your resume here..."></textarea>
 
-            <p><strong>Or upload your resume (PDF):</strong></p>
-            <input type="file" name="resume_pdf" accept=".pdf">
+            <div class="drop-zone" id="dropZone">
+                Drag & drop your PDF here or click to upload
+            </div>
+
+            <input type="file" name="resume_pdf" id="fileInput" accept=".pdf">
 
             <button type="submit">Improve Resume</button>
+
+            <div class="spinner" id="spinner"></div>
         </form>
 
         {% if error %}
@@ -148,10 +186,37 @@ HTML_TEMPLATE = """
     </footer>
 </div>
 
+<script>
+const dropZone = document.getElementById("dropZone");
+const fileInput = document.getElementById("fileInput");
+const form = document.getElementById("resumeForm");
+const spinner = document.getElementById("spinner");
+
+dropZone.addEventListener("click", () => fileInput.click());
+
+dropZone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropZone.classList.add("dragover");
+});
+
+dropZone.addEventListener("dragleave", () => {
+    dropZone.classList.remove("dragover");
+});
+
+dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("dragover");
+    fileInput.files = e.dataTransfer.files;
+});
+
+form.addEventListener("submit", () => {
+    spinner.style.display = "block";
+});
+</script>
+
 </body>
 </html>
 """
-
 
 # ================================
 # Helper: extract text from PDF
@@ -163,7 +228,7 @@ def extract_text_from_pdf(file_storage):
         for page in reader.pages:
             extracted = page.extract_text()
             if extracted:
-                text += extracted + "\n"
+                text += extracted + "\\n"
         return text.strip()
     except Exception:
         return ""
@@ -180,7 +245,6 @@ def home():
         resume_text = request.form.get("resume_text", "").strip()
         pdf_file = request.files.get("resume_pdf")
 
-        # Priority: PDF if uploaded
         if pdf_file and pdf_file.filename.endswith(".pdf"):
             resume_text = extract_text_from_pdf(pdf_file)
 
@@ -199,7 +263,7 @@ def home():
     )
 
 # ================================
-# 🚨 CRITICAL: Render-compatible run
+# Render-compatible run
 # ================================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
