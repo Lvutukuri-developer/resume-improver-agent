@@ -19,98 +19,117 @@ HTML_TEMPLATE = """
 <html>
 <head>
     <title>AI Resume Improver</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
     <style>
         body {
-            font-family: Arial, sans-serif;
-            background: linear-gradient(135deg, #0f172a, #1e293b);
-            color: white;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background: #f5f7fb;
             margin: 0;
+            padding: 0;
+            color: #111827;
         }
 
-        .container {
-            background: #111827;
-            padding: 40px;
-            border-radius: 16px;
-            width: 90%;
-            max-width: 700px;
-            box-shadow: 0 0 30px rgba(99,102,241,0.4);
+        .wrapper {
+            max-width: 900px;
+            margin: 80px auto;
+            padding: 0 20px;
+            text-align: center;
         }
 
         h1 {
-            text-align: center;
+            font-size: 40px;
+            font-weight: 700;
             margin-bottom: 10px;
         }
 
         .subtitle {
-            text-align: center;
-            color: #9ca3af;
-            margin-bottom: 25px;
+            color: #6b7280;
+            margin-bottom: 40px;
+            font-size: 18px;
+        }
+
+        .card {
+            background: white;
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+            text-align: left;
         }
 
         textarea {
             width: 100%;
             height: 180px;
-            padding: 12px;
+            padding: 14px;
             border-radius: 10px;
-            border: none;
-            margin-bottom: 15px;
+            border: 1px solid #e5e7eb;
             font-size: 14px;
+            margin-bottom: 20px;
+            resize: vertical;
         }
 
         input[type="file"] {
-            margin-bottom: 20px;
-            color: #d1d5db;
+            margin-bottom: 24px;
         }
 
         button {
             width: 100%;
             padding: 14px;
-            background: linear-gradient(90deg, #6366f1, #8b5cf6);
+            background: #111827;
+            color: white;
             border: none;
             border-radius: 10px;
-            color: white;
             font-size: 16px;
-            font-weight: bold;
+            font-weight: 600;
             cursor: pointer;
-            transition: 0.25s;
+            transition: all 0.2s ease;
         }
 
         button:hover {
+            background: #000;
             transform: translateY(-1px);
-            box-shadow: 0 0 20px rgba(139,92,246,0.6);
         }
 
         .output {
-            margin-top: 25px;
-            background: #020617;
-            padding: 15px;
-            border-radius: 10px;
+            margin-top: 30px;
+            background: #f9fafb;
+            padding: 20px;
+            border-radius: 12px;
             white-space: pre-wrap;
+            border: 1px solid #e5e7eb;
         }
 
         .error {
             margin-top: 20px;
-            color: #f87171;
+            color: #dc2626;
             text-align: center;
+            font-weight: 500;
+        }
+
+        footer {
+            margin-top: 40px;
+            text-align: center;
+            color: #9ca3af;
+            font-size: 14px;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🚀 AI Resume Improver</h1>
-        <p class="subtitle">Paste your resume or upload a PDF</p>
 
+<div class="wrapper">
+    <h1>AI Resume Improver</h1>
+    <p class="subtitle">
+        Instantly strengthen your resume bullets with AI.
+    </p>
+
+    <div class="card">
         <form method="POST" enctype="multipart/form-data">
-            <textarea name="resume_text" placeholder="Paste your resume bullet here..."></textarea>
+            <textarea name="resume_text" placeholder="Paste your resume here..."></textarea>
 
-            <p>Or upload your resume (PDF):</p>
+            <p><strong>Or upload your resume (PDF):</strong></p>
             <input type="file" name="resume_pdf" accept=".pdf">
 
-            <button type="submit">✨ Improve Resume</button>
+            <button type="submit">Improve Resume</button>
         </form>
 
         {% if error %}
@@ -123,9 +142,16 @@ HTML_TEMPLATE = """
         </div>
         {% endif %}
     </div>
+
+    <footer>
+        Built by Lucky • AI-powered resume optimization
+    </footer>
+</div>
+
 </body>
 </html>
 """
+
 
 # ================================
 # Helper: extract text from PDF
