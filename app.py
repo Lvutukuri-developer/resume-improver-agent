@@ -206,7 +206,11 @@ dropZone.addEventListener("dragleave", () => {
 dropZone.addEventListener("drop", (e) => {
     e.preventDefault();
     dropZone.classList.remove("dragover");
-    fileInput.files = e.dataTransfer.files;
+
+    if (e.dataTransfer.files.length > 0) {
+        fileInput.files = e.dataTransfer.files;
+        dropZone.textContent = "PDF uploaded ✓";
+    }
 });
 
 form.addEventListener("submit", () => {
@@ -245,11 +249,14 @@ def home():
         resume_text = request.form.get("resume_text", "").strip()
         pdf_file = request.files.get("resume_pdf")
 
-        if pdf_file and pdf_file.filename.endswith(".pdf"):
-            resume_text = extract_text_from_pdf(pdf_file)
+        # ✅ Robust PDF handling (FIXED)
+        if pdf_file and pdf_file.filename:
+            extracted = extract_text_from_pdf(pdf_file)
+            if extracted:
+                resume_text = extracted
 
         if not resume_text:
-            error = "Please paste text or upload a PDF."
+            error = "Please paste text or upload a valid PDF."
         else:
             try:
                 improved = improve_resume(resume_text)
