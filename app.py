@@ -1,5 +1,6 @@
 import os
 import difflib
+import re
 from flask import Flask, request, render_template_string
 from dotenv import load_dotenv
 from agent import improve_resume
@@ -9,209 +10,161 @@ import markdown
 load_dotenv()
 app = Flask(__name__)
 
-# =============================
-# PDF text extraction
-# =============================
 def extract_text_from_pdf(file):
     try:
         reader = PdfReader(file)
-        text = ""
-        for page in reader.pages:
-            extracted = page.extract_text()
-            if extracted:
-                text += extracted + "\n"
-        return text.strip()
+        return "\n".join([p.extract_text() for p in reader.pages if p.extract_text()])
     except:
         return ""
 
-# =============================
-# Build diff with context
-# =============================
-def diff_with_context(orig_html, imp_html):
-    orig_lines = orig_html.splitlines()
-    imp_lines = imp_html.splitlines()
-    diff = list(difflib.ndiff(orig_lines, imp_lines))
-
-    context_diff = []
-    last_section = None
-
-    for line in diff:
-        if line.startswith("+ "):
-            text = line[2:].strip()
-            # only include non-empty additions
-            if text:
-                context_diff.append(text)
-
-    # join them back with <br> for HTML
-    return "<br>".join(context_diff)
-
-# =============================
-# HTML TEMPLATE
-# =============================
+def generate_surgical_diff(orig, imp):
+    """
+    Compares words rather than lines to provide 'Apple-level' precision highlighting.
+    """
+    output = []
+    # Tokenize by whitespace but keep newlines
+    orig_words = re.findall(r'\S+|\n', orig)
+    imp_words = re.findall(r'\S+|\n', imp)
+    
+    sm = difflib.SequenceMatcher(None, orig_words, imp_words)
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == 'equal':
+            output.append(" ".join(imp_words[j1:j2]))
+        elif tag == 'replace' or tag == 'insert':
+            # Wrap only the changed/new parts in a highlight span
+            changed_text = " ".join(imp_words[j1:j2])
+            output.append(f'<span class="hl">{changed_text}</span>')
+        # 'delete' is ignored for the 'After' view to keep it clean
+            
+    return markdown.markdown(" ".join(output).replace(" \n ", "\n"))
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>AI Resume Diff</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
+    <meta charset="UTF-8">
+    <title>Resume Optimizer Pro</title>
     <style>
+        :root {
+            --apple-blue: #007AFF;
+            --bg: #F5F5F7;
+            --card: #FFFFFF;
+            --text: #1D1D1F;
+            --highlight: rgba(52, 199, 89, 0.2); /* Soft Apple Green */
+        }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-            background: #f5f7fb;
-            padding: 24px 12px;
-            color: #111827;
-        }
-        .container {
-            max-width: 960px;
-            margin: auto;
-            background: white;
-            padding: 36px;
-            border-radius: 18px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.08);
-        }
-        h1 {
-            text-align: center;
-            font-size: 38px;
-            margin-bottom: 8px;
-        }
-        .subtitle {
-            text-align: center;
-            color: #64748b;
-            margin-bottom: 28px;
-            font-size: 16px;
-        }
-        textarea {
-            width: 100%;
-            height: 180px;
-            padding: 14px;
-            border-radius: 12px;
-            border: 1px solid #e2e8f0;
-            font-size: 15px;
-            margin-bottom: 18px;
-            resize: vertical;
-        }
-        .drop-zone {
-            padding: 24px;
-            border: 2px dashed #cbd5e1;
-            border-radius: 14px;
-            text-align: center;
-            color: #64748b;
-            margin-bottom: 18px;
-            cursor: pointer;
-        }
-        .drop-zone.dragover {
-            background: #f1f5f9;
-            border-color: #4f46e5;
-        }
-        .btn {
-            width: 100%;
-            padding: 16px;
-            font-size: 16px;
-            font-weight: 600;
-            border: none;
-            border-radius: 14px;
-            color: white;
-            background: linear-gradient(90deg, #6366f1, #8b5cf6);
-            cursor: pointer;
-        }
-        .spinner {
-            text-align: center;
-            margin-top: 18px;
-            font-weight: 600;
-            color: #6366f1;
-            display: none;
-        }
-        .diff-container {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
             display: flex;
-            gap: 24px;
+            flex-direction: column;
+            align-items: center;
+            -webkit-font-smoothing: antialiased;
+        }
+        .nav { width: 100%; padding: 20px; text-align: center; background: rgba(255,255,255,0.7); backdrop-filter: blur(20px); position: sticky; top: 0; z-index: 10; border-bottom: 0.5px solid #d2d2d7; }
+        
+        .container { max-width: 1100px; width: 90%; margin: 40px 0; }
+        
+        /* Drag & Drop Apple Style */
+        .drop-zone {
+            position: relative;
+            border: 2px dashed #d2d2d7;
+            border-radius: 18px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s ease;
+            background: var(--card);
+            cursor: pointer;
+        }
+        .drop-zone:hover { border-color: var(--apple-blue); background: #fff; }
+        .drop-zone input { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+        
+        .btn {
+            background: var(--apple-blue);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: 500;
+            border-radius: 980px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: transform 0.2s;
+        }
+        .btn:active { transform: scale(0.98); }
+
+        /* Resume Workspace */
+        .workspace {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
             margin-top: 40px;
         }
-        .diff-col {
-            width: 50%;
-        }
-        .diff-title {
-            font-size: 18px;
-            font-weight: 700;
-            margin-bottom: 10px;
-        }
-        .diff-box {
-            background: #fafafa;
-            border: 1px solid #e5e7eb;
-            padding: 20px;
-            border-radius: 14px;
-            font-size: 15px;
-            line-height: 1.6;
-            white-space: pre-wrap;
-            overflow-x: auto;
-        }
-        .hl {
-            background: #fff9c4;
-            padding: 4px;
+        .page-preview {
+            background: white;
+            padding: 40px;
             border-radius: 4px;
-            display: inline-block;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+            min-height: 600px;
+            font-size: 14px;
+            line-height: 1.5;
+            color: #333;
         }
+        .page-header { font-weight: 600; margin-bottom: 10px; color: #86868b; text-transform: uppercase; font-size: 12px; }
+        
+        /* Surgical Highlight */
+        .hl {
+            background-color: var(--highlight);
+            border-bottom: 1px solid rgba(52, 199, 89, 0.4);
+            color: #1a4721;
+            padding: 0 2px;
+            border-radius: 2px;
+        }
+        
+        #spinner { display: none; margin-top: 20px; color: var(--apple-blue); font-weight: 500; }
+        
+        textarea { width: 100%; height: 100px; border-radius: 12px; border: 1px solid #d2d2d7; padding: 15px; margin-top: 15px; font-family: inherit; }
     </style>
 </head>
-
 <body>
+
+<div class="nav"><strong>Resume Optimizer</strong></div>
+
 <div class="container">
-
-    <h1>✨ AI Resume Diff View</h1>
-    <div class="subtitle">Showing newly added / changed lines in your improved resume</div>
-
-    <form method="POST" enctype="multipart/form-data" onsubmit="showSpinner()">
-        <textarea name="resume_text" placeholder="Paste your resume text here..."></textarea>
-
+    <form method="POST" enctype="multipart/form-data" onsubmit="document.getElementById('spinner').style.display='block'">
         <div class="drop-zone" id="dropZone">
-            Drag & drop a PDF here
-            <br><br>
-            <input type="file" name="resume_pdf" accept=".pdf">
+            <div id="drop-text">Drag & drop your PDF here or click to browse</div>
+            <input type="file" name="resume_pdf" accept=".pdf" onchange="updateFileName(this)">
         </div>
-
-        <button class="btn">🚀 Improve + Highlight</button>
+        
+        <textarea name="resume_text" placeholder="Or paste your resume text here..."></textarea>
+        
+        <div style="text-align: center;">
+            <button class="btn">Refine Resume</button>
+            <div id="spinner">Optimizing with AI...</div>
+        </div>
     </form>
 
-    <div class="spinner" id="spinner">⚡ Working on it…</div>
-
     {% if diff_html %}
-    <div class="diff-container">
-        <div class="diff-col">
-            <div class="diff-title">📝 Original Resume</div>
-            <div class="diff-box">{{ original | safe }}</div>
+    <div class="workspace">
+        <div>
+            <div class="page-header">Original</div>
+            <div class="page-preview">{{ original | safe }}</div>
         </div>
-
-        <div class="diff-col">
-            <div class="diff-title">✨ Added / Changed Lines</div>
-            <div class="diff-box">{{ diff_html | safe }}</div>
+        <div>
+            <div class="page-header">Optimized (AI Changes Highlighted)</div>
+            <div class="page-preview">{{ diff_html | safe }}</div>
         </div>
     </div>
     {% endif %}
 </div>
 
 <script>
-function showSpinner() {
-    document.getElementById("spinner").style.display = "block";
-}
-
-const dropZone = document.getElementById("dropZone");
-
-dropZone.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    dropZone.classList.add("dragover");
-});
-
-dropZone.addEventListener("dragleave", () => {
-    dropZone.classList.remove("dragover");
-});
-
-dropZone.addEventListener("drop", (e) => {
-    e.preventDefault();
-    dropZone.classList.remove("dragover");
-    const fileInput = dropZone.querySelector("input[type=file]");
-    fileInput.files = e.dataTransfer.files;
-});
+    function updateFileName(input) {
+        const text = document.getElementById('drop-text');
+        text.innerText = input.files[0] ? `Selected: ${input.files[0].name}` : "Drag & drop your PDF here";
+    }
 </script>
 
 </body>
@@ -220,43 +173,24 @@ dropZone.addEventListener("drop", (e) => {
 
 @app.route("/", methods=["GET", "POST"])
 def home():
-    original = None
-    diff_html = None
-    error = None
-
+    original, diff_html, error = None, None, None
     if request.method == "POST":
         text = request.form.get("resume_text", "").strip()
         pdf_file = request.files.get("resume_pdf")
-
         if pdf_file and pdf_file.filename:
-            extracted = extract_text_from_pdf(pdf_file)
-            if extracted:
-                text = extracted
-
-        if not text:
-            error = "⚠️ Please paste text or upload a PDF first."
-        else:
+            text = extract_text_from_pdf(pdf_file)
+        
+        if text:
             try:
                 improved_text = improve_resume(text)
-
-                orig_html = markdown.markdown(text)
-                imp_html = markdown.markdown(improved_text)
-
-                highlighted = diff_with_context(orig_html, imp_html)
-
-                original = orig_html
-                diff_html = highlighted
-
+                # Render original as Markdown for structure
+                original = markdown.markdown(text)
+                # Use our new word-level diffing engine
+                diff_html = generate_surgical_diff(text, improved_text)
             except Exception as e:
-                error = f"Error: {str(e)}"
+                error = str(e)
 
-    return render_template_string(
-        HTML_TEMPLATE,
-        original=original,
-        diff_html=diff_html,
-        error=error
-    )
+    return render_template_string(HTML_TEMPLATE, original=original, diff_html=diff_html, error=error)
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(debug=True)
