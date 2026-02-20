@@ -16,27 +16,23 @@ app = Flask(__name__)
 def extract_text_from_pdf(file):
     try:
         reader = PdfReader(file)
-        # Extract text while attempting to preserve basic line structure
         return "\n".join([p.extract_text() for p in reader.pages if p.extract_text()])
     except:
         return ""
 
 # ==========================
-# Normalize original resume (Improved Formatting)
+# Normalize original resume
 # ==========================
 def normalize_resume_text(text: str) -> str:
     if not text:
         return ""
-    # Remove excessive whitespace but keep single newlines for structure
     lines = [line.strip() for line in text.splitlines()]
-    # Join with double newlines for Markdown to recognize paragraphs
-    return "\n\n".join([l for l in lines if l])
+    return "\n".join([l for l in lines if l])
 
 # ==========================
-# Word-level diff highlighting (Surgical Fix)
+# Surgical Word-Level Diff
 # ==========================
 def generate_surgical_diff(orig, imp):
-    # Split by whitespace but keep track of words
     orig_words = orig.split()
     imp_words = imp.split()
     
@@ -47,17 +43,15 @@ def generate_surgical_diff(orig, imp):
         if tag == 'equal':
             output.append(" ".join(imp_words[j1:j2]))
         elif tag in ('replace', 'insert'):
-            # Only wrap the SPECIFIC changed words in the hl span
             changed_text = " ".join(imp_words[j1:j2])
             output.append(f'<span class="hl">{changed_text}</span>')
-        # Deletions are skipped to show the final "Improved" version
 
-    # Convert the joined string to Markdown, then handle line breaks
     final_text = " ".join(output)
-    return markdown.markdown(final_text).replace("\n", "<br>")
+    # Convert double newlines to breaks for proper spacing
+    return final_text.replace("\n", "<br>")
 
 # ==========================
-# Apple Flagship UI (HTML/CSS)
+# Apple Flagship UI (V2)
 # ==========================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -65,189 +59,177 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Resume AI | Flagship Edition</title>
+    <title>Resume AI | Pro</title>
     <style>
         :root {
-            --apple-blue: #007AFF;
-            --bg: #F5F5F7;
-            --card: #FFFFFF;
-            --text: #1D1D1F;
-            --secondary-text: #86868B;
-            --highlight: rgba(255, 214, 0, 0.3);
+            --apple-blue: #0071e3;
+            --bg: #f5f5f7;
+            --card-bg: rgba(255, 255, 255, 0.8);
+            --text-primary: #1d1d1f;
+            --text-secondary: #86868b;
+            --highlight: rgba(255, 214, 0, 0.35);
         }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             background-color: var(--bg);
-            color: var(--text);
+            color: var(--text-primary);
             margin: 0;
-            padding: 0;
+            line-height: 1.47;
             -webkit-font-smoothing: antialiased;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-        .nav {
-            width: 100%;
-            height: 50px;
-            background: rgba(245, 245, 247, 0.8);
-            backdrop-filter: blur(20px);
-            position: sticky;
-            top: 0;
-            z-index: 100;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-weight: 600;
-            font-size: 14px;
         }
         .container {
-            width: 90%;
-            max-width: 1200px;
-            margin: 60px auto;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 80px 20px;
         }
         h1 {
-            font-size: 48px;
+            font-size: 56px;
             font-weight: 700;
-            letter-spacing: -1.2px;
+            letter-spacing: -0.015em;
             text-align: center;
-            margin-bottom: 40px;
+            margin-bottom: 10px;
         }
-        /* Hide default file input but keep it functional */
-        .file-input-container {
-            position: relative;
-            width: 100%;
+        .subtitle {
+            font-size: 24px;
+            color: var(--text-secondary);
+            text-align: center;
+            margin-bottom: 50px;
         }
-        #hidden-file-input {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            opacity: 0;
-            cursor: pointer;
-        }
+
+        /* Apple Style Drag & Drop */
         .drop-zone {
-            border: 2px dashed #D2D2D7;
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            border: 2px dashed #d2d2d7;
             border-radius: 20px;
-            padding: 60px;
+            padding: 80px 20px;
             text-align: center;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            background: var(--card);
-            box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        .drop-zone:hover {
+            border-color: var(--apple-blue);
+            background: #ffffff;
         }
         .drop-zone.dragover {
+            background: rgba(0, 113, 227, 0.05);
             border-color: var(--apple-blue);
-            background: rgba(0, 122, 255, 0.05);
             transform: scale(1.01);
         }
         .drop-zone p {
-            font-size: 20px;
-            font-weight: 500;
-            color: var(--secondary-text);
+            font-size: 21px;
+            font-weight: 600;
+            margin: 0;
         }
         .drop-zone span {
             color: var(--apple-blue);
-            text-decoration: none;
+            display: block;
+            font-size: 16px;
+            margin-top: 8px;
+            font-weight: 400;
         }
+        #file-input { display: none; }
+
         textarea {
             width: 100%;
-            height: 120px;
+            height: 100px;
             margin-top: 24px;
             padding: 20px;
             border-radius: 18px;
             border: 1px solid #d2d2d7;
-            font-size: 16px;
+            font-size: 17px;
+            background: var(--card-bg);
             box-sizing: border-box;
-            background: var(--card);
             font-family: inherit;
             resize: none;
+            outline: none;
         }
+        textarea:focus { border-color: var(--apple-blue); }
+
         .btn {
             background: var(--apple-blue);
             color: white;
             border: none;
-            padding: 16px 32px;
+            padding: 18px 30px;
             font-size: 17px;
             font-weight: 600;
             border-radius: 980px;
             width: 100%;
-            margin-top: 24px;
+            margin-top: 30px;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: opacity 0.2s ease;
         }
-        .btn:hover {
-            background: #0071e3;
-            transform: scale(1.01);
-        }
+        .btn:hover { opacity: 0.9; }
+
         .workspace {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 40px;
-            margin-top: 80px;
+            gap: 30px;
+            margin-top: 60px;
         }
-        .page-preview {
-            background: white;
-            padding: 50px;
+        .page-card {
+            background: #ffffff;
+            padding: 40px;
             border-radius: 24px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.08);
-            min-height: 600px;
-            font-size: 14px;
-            line-height: 1.5;
-            color: #333;
-            border: 1px solid #E5E5E7;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.04);
+            font-size: 15px;
+            line-height: 1.6;
+            min-height: 500px;
+            border: 1px solid #e5e5e7;
         }
-        .page-label {
+        .label {
             font-size: 12px;
-            font-weight: 600;
-            color: var(--secondary-text);
+            font-weight: 700;
+            color: var(--text-secondary);
             text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 20px;
+            letter-spacing: 0.1em;
+            margin-bottom: 24px;
             display: block;
         }
         .hl {
-            background-color: var(--highlight);
-            padding: 2px 0;
-            border-bottom: 2px solid #FFD600;
+            background: var(--highlight);
+            padding: 1px 0;
             border-radius: 2px;
+            font-weight: 500;
         }
         #spinner {
             display: none;
             text-align: center;
             margin-top: 20px;
-            font-weight: 500;
             color: var(--apple-blue);
+            font-weight: 600;
         }
     </style>
 </head>
 <body>
 
-<div class="nav">Resume Optimizer Pro</div>
-
 <div class="container">
-    <h1>Refine your narrative.</h1>
+    <h1>Your resume, perfected.</h1>
+    <p class="subtitle">AI-powered refinement for high-impact roles.</p>
 
     <form id="mainForm" method="POST" enctype="multipart/form-data">
-        <div class="file-input-container">
-            <div class="drop-zone" id="dropZone">
-                <p>Drag your PDF here or <span>browse</span></p>
-                <input type="file" name="resume_pdf" id="hidden-file-input" accept=".pdf">
-            </div>
+        <div class="drop-zone" id="dropZone">
+            <p id="drop-text">Drop your PDF here</p>
+            <span>or click to browse your files</span>
+            <input type="file" name="resume_pdf" id="file-input" accept=".pdf">
         </div>
 
-        <textarea name="resume_text" placeholder="Or paste your professional summary..."></textarea>
+        <textarea name="resume_text" placeholder="Or paste your resume content here..."></textarea>
 
         <button type="submit" class="btn" onclick="showLoading()">Refine Resume</button>
     </form>
     
-    <div id="spinner">✨ Polishing your details...</div>
+    <div id="spinner">Analyzing your professional profile...</div>
 
     {% if diff_html %}
     <div class="workspace">
-        <div class="page-preview">
-            <span class="page-label">Current Version</span>
+        <div class="page-card">
+            <span class="label">Original</span>
             <div style="white-space: pre-wrap;">{{ original | safe }}</div>
         </div>
-        <div class="page-preview">
-            <span class="page-label">AI Optimized</span>
+        <div class="page-card">
+            <span class="label">Optimized Results</span>
             <div>{{ diff_html | safe }}</div>
         </div>
     </div>
@@ -256,8 +238,21 @@ HTML_TEMPLATE = """
 
 <script>
     const dropZone = document.getElementById("dropZone");
-    const fileInput = document.getElementById("hidden-file-input");
+    const fileInput = document.getElementById("file-input");
+    const dropText = document.getElementById("drop-text");
 
+    // 1. Click to Open File Explorer
+    dropZone.addEventListener("click", () => fileInput.click());
+
+    // 2. Handle File Selection via Explorer
+    fileInput.addEventListener("change", function() {
+        if (this.files.length > 0) {
+            dropText.innerText = "File Selected: " + this.files[0].name;
+            dropZone.style.borderColor = "var(--apple-blue)";
+        }
+    });
+
+    // 3. Handle Drag & Drop Logic
     dropZone.addEventListener("dragover", e => {
         e.preventDefault();
         dropZone.classList.add("dragover");
@@ -267,9 +262,12 @@ HTML_TEMPLATE = """
         dropZone.addEventListener(type, () => dropZone.classList.remove("dragover"));
     });
 
-    fileInput.addEventListener("change", function() {
-        if (this.files.length > 0) {
-            dropZone.querySelector('p').innerHTML = "Selected: <span>" + this.files[0].name + "</span>";
+    dropZone.addEventListener("drop", e => {
+        e.preventDefault();
+        if (e.dataTransfer.files.length > 0) {
+            fileInput.files = e.dataTransfer.files; // Assign dropped file to input
+            dropText.innerText = "File Selected: " + e.dataTransfer.files[0].name;
+            dropZone.style.borderColor = "var(--apple-blue)";
         }
     });
 
@@ -295,22 +293,15 @@ def home():
 
         if text:
             try:
-                # Agent logic
                 improved_text = improve_resume(text)
-
-                # Format Original for visual clarity
                 clean_original = normalize_resume_text(text)
-                original = clean_original # Kept as string for pre-wrap
-
-                # Surgical Diffing
                 diff_html = generate_surgical_diff(clean_original, improved_text)
-
+                original = clean_original
             except Exception as e:
                 error = str(e)
 
     return render_template_string(HTML_TEMPLATE, original=original, diff_html=diff_html, error=error)
 
 if __name__ == "__main__":
-    # Ensure Render deployment works by binding to 0.0.0.0 and dynamic port
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
