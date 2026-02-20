@@ -60,7 +60,7 @@ def generate_highlighted_html(orig, imp):
     return markdown.markdown(combined_md)
 
 # ==========================
-# Apple Flagship UI (V4)
+# Apple Flagship UI (V5)
 # ==========================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -78,6 +78,7 @@ HTML_TEMPLATE = """
             --glass: rgba(255, 255, 255, 0.8);
             --hl-bg: rgba(0, 113, 227, 0.12);
             --hl-border: rgba(0, 113, 227, 0.3);
+            --border-dark: #b1b1b6; 
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
@@ -132,16 +133,22 @@ HTML_TEMPLATE = """
             box-shadow: 0 4px 20px rgba(0,0,0,0.06); height: 850px; overflow: hidden;
         }
         
-        /* Structured Result Styling */
         .improved-content {
             padding: 50px; overflow-y: auto; height: 100%;
             font-family: "Times New Roman", Times, serif; font-size: 15px;
             line-height: 1.5; color: #111; box-sizing: border-box;
         }
+        
         .improved-content h1, .improved-content h2, .improved-content h3 {
             font-family: -apple-system, sans-serif;
-            color: #000; border-bottom: 1px solid #eee; padding-bottom: 4px; margin-top: 20px;
+            color: #000; 
+            border-bottom: 1.5px solid var(--border-dark); 
+            padding-bottom: 4px; 
+            margin-top: 24px;
+            margin-bottom: 12px;
+            letter-spacing: -0.01em;
         }
+        
         .hl {
             background-color: var(--hl-bg);
             border-bottom: 1.5px solid var(--hl-border);
@@ -157,7 +164,7 @@ HTML_TEMPLATE = """
 <div class="container">
     <div class="header-section">
         <h1>Your resume, perfected.</h1>
-        <p class="subtitle">Flagship AI refinement.</p>
+        <p class="subtitle">Premium AI-driven career optimization.</p>
     </div>
 
     <div class="input-card">
@@ -170,7 +177,7 @@ HTML_TEMPLATE = """
             <textarea name="resume_text" placeholder="Or paste your resume text..."></textarea>
             <button type="submit" class="btn" onclick="showLoad()">Refine Resume</button>
         </form>
-        <div id="spinner">✨ Crafting your professional narrative...</div>
+        <div id="spinner">✨ Enhancing your professional profile...</div>
     </div>
 
     {% if improved_html %}
@@ -219,9 +226,7 @@ def home():
             text = extract_text_from_pdf(pdf_file)
 
         if text:
-            # 1. Get raw improvement from your agent
             raw_improved = improve_resume(text)
-            # 2. Process highlights while keeping structure
             improved_html = generate_highlighted_html(text, raw_improved)
 
     return render_template_string(HTML_TEMPLATE, 
@@ -229,5 +234,7 @@ def home():
                                  pdf_base64=pdf_base64)
 
 if __name__ == "__main__":
+    # Render uses the PORT environment variable
     port = int(os.environ.get("PORT", 5000))
+    # '0.0.0.0' is required for Render to reach the container
     app.run(host="0.0.0.0", port=port)
