@@ -1,15 +1,18 @@
 import os
 import io
 import json
+import uuid
 from flask import Flask, request, render_template_string, send_file, session
 from dotenv import load_dotenv
 from agent import improve_resume
+from markupsafe import escape
 from PyPDF2 import PdfReader
 from weasyprint import HTML
 
 load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "resume-improver-dev-key")
+RESULT_STORE = {}
 
 
 def extract_text_from_pdf(file):
@@ -34,7 +37,56 @@ RESUME_PDF_CSS = """
     .job-title { font-weight: bold; font-size: 11pt; }
     .job-info { color: #555; font-size: 10pt; font-style: italic; }
     .skills-list { font-size: 10pt; }
+    .highlight { background: #fff3a3; border-radius: 3px; padding: 1px 3px; }
 """
+
+
+def build_original_text_pdf(text):
+    pdf_html = f"""
+    <html>
+    <head><style>{RESUME_PDF_CSS} pre {{ white-space: pre-wrap; font-family: 'Helvetica', sans-serif; }}</style></head>
+    <body><pre>{escape(text)}</pre></body>
+    </html>
+    """
+    return HTML(string=pdf_html).write_pdf()
+
+
+def build_optimized_resume_pdf(data):
+    jobs_html = []
+    for job in data.get("experience", []):
+        title = escape(job.get("title", ""))
+        company = escape(job.get("company", ""))
+        dates = escape(job.get("dates", ""))
+        desc = escape(job.get("desc", ""))
+        dates_html = f'<div class="job-info">{dates}</div>' if dates else ""
+        jobs_html.append(
+            f"""
+            <div class="job">
+                <div class="job-title">{title}</div>
+                <div class="job-info">{company}</div>
+                {dates_html}
+                <p><span class="highlight">{desc}</span></p>
+            </div>
+            """
+        )
+
+    skills = ", ".join(data.get("skills", []))
+    pdf_html = f"""
+    <html>
+    <head><style>{RESUME_PDF_CSS}</style></head>
+    <body>
+        <h1>{escape(data.get('name', ''))}</h1>
+        <div class="contact">{escape(data.get('contact', ''))}</div>
+        <h2>Professional Summary</h2>
+        <p><span class="highlight">{escape(data.get('summary', ''))}</span></p>
+        <h2>Work Experience</h2>
+        {''.join(jobs_html)}
+        <h2>Skills</h2>
+        <p><span class="highlight">{escape(skills)}</span></p>
+    </body>
+    </html>
+    """
+    return HTML(string=pdf_html).write_pdf()
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -197,31 +249,13 @@ HTML_TEMPLATE = """
             box-shadow: 0 4px 20px rgba(0,0,0,0.05);
             height: 720px;
             overflow-y: auto;
-            padding: 36px;
-            white-space: pre-wrap;
+            padding: 0;
         }
-        .highlight {
-            background: #fff3a3;
-            border-radius: 4px;
-            box-decoration-break: clone;
-            -webkit-box-decoration-break: clone;
-            padding: 1px 4px;
-        }
-        .paper h1 {
-            font-size: 32px;
-            margin: 0 0 8px;
-        }
-        .paper h2 {
-            border-bottom: 1px solid #eee;
-            color: var(--blue);
-            font-size: 18px;
-            margin-top: 24px;
-            padding-bottom: 5px;
-        }
-        .muted-note {
-            color: var(--muted);
-            font-size: 14px;
-            margin-bottom: 20px;
+        .pdf-frame {
+            border: 0;
+            border-radius: 14px;
+            height: 100%;
+            width: 100%;
         }
         @media (max-width: 900px) {
             .container { width: min(100% - 28px, 720px); padding-top: 30px; }
@@ -261,32 +295,15 @@ HTML_TEMPLATE = """
         <div class="viewer-box">
             <span class="label">Original Document</span>
             <div class="paper">
-                <div class="muted-note">Extracted from your original resume</div>
-                {{ original_text }}
+                <iframe class="pdf-frame" src="/original-pdf/{{ result_id }}"></iframe>
             </div>
         </div>
         <div class="viewer-box">
             <span class="label">Optimized Result</span>
-            <div class="paper" id="resume-preview">
-                <div class="muted-note">Yellow marks rewritten or newly improved sections</div>
-                <h1>{{ data.name }}</h1>
-                <p>{{ data.contact }}</p>
-                <h2>Summary</h2>
-                <p><span class="highlight">{{ data.summary }}</span></p>
-                <h2>Experience</h2>
-                {% for job in data.experience %}
-                    <div style="margin-bottom:15px;">
-                        <strong>{{ job.title }}</strong> | <em>{{ job.company }}</em>
-                        {% if job.dates %}<div>{{ job.dates }}</div>{% endif %}
-                        <p><span class="highlight">{{ job.desc }}</span></p>
-                    </div>
-                {% endfor %}
-                {% if data.skills %}
-                    <h2>Skills</h2>
-                    <p><span class="highlight">{{ data.skills | join(", ") }}</span></p>
-                {% endif %}
+            <div class="paper">
+                <iframe class="pdf-frame" src="/optimized-pdf/{{ result_id }}"></iframe>
             </div>
-            <a class="btn btn-download" href="/download" download>Download Executive PDF</a>
+            <a class="btn btn-download" href="/download/{{ result_id }}" download>Download Executive PDF</a>
         </div>
     </div>
     {% endif %}
@@ -331,7 +348,7 @@ dropZone.addEventListener('drop', (event) => {
 
 @app.route("/", methods=["GET", "POST"])
 def home():
-    data, error, original_text = None, None, ""
+    data, error, result_id = None, None, None
     resume_text = ""
     if request.method == "POST":
         pdf_file = request.files.get("resume_pdf")
@@ -343,14 +360,21 @@ def home():
                 text = extract_text_from_pdf(pdf_file)
                 if not text:
                     raise ValueError("No readable text was found in that PDF. If it is scanned, export it with selectable text and try again.")
+                original_pdf_bytes = raw_pdf_data
             elif resume_text:
                 text = resume_text
+                original_pdf_bytes = build_original_text_pdf(text)
             else:
                 raise ValueError("Upload a PDF or paste your resume text to refine it.")
 
-            original_text = text
             data = improve_resume(text)
-            session["latest_resume_data"] = data
+            result_id = str(uuid.uuid4())
+            RESULT_STORE[result_id] = {
+                "data": data,
+                "original_pdf": original_pdf_bytes,
+                "optimized_pdf": build_optimized_resume_pdf(data),
+            }
+            session["latest_result_id"] = result_id
         except Exception as exc:
             error = str(exc) or "Something went wrong while refining the resume."
 
@@ -358,37 +382,45 @@ def home():
         HTML_TEMPLATE,
         data=data,
         error=error,
-        original_text=original_text,
+        result_id=result_id,
         resume_text=resume_text,
     )
 
 
-@app.route("/download", methods=["GET"])
-def download():
-    data = session.get("latest_resume_data")
-    if not data:
-        return "No optimized resume is available yet.", 400
-
-    pdf_html = f"""
-    <html>
-    <head><style>{RESUME_PDF_CSS}</style></head>
-    <body>
-        <h1>{data.get('name')}</h1>
-        <div class="contact">{data.get('contact')}</div>
-        <h2>Professional Summary</h2>
-        <p>{data.get('summary')}</p>
-        <h2>Work Experience</h2>
-        {''.join([f'<div class="job"><div class="job-title">{j["title"]}</div><div class="job-info">{j["company"]}</div><p>{j["desc"]}</p></div>' for j in data.get('experience', [])])}
-        <h2>Skills</h2>
-        <p>{", ".join(data.get('skills', []))}</p>
-    </body>
-    </html>
-    """
-
-    pdf_bytes = HTML(string=pdf_html).write_pdf()
+@app.route("/original-pdf/<result_id>", methods=["GET"])
+def original_pdf(result_id):
+    result = RESULT_STORE.get(result_id)
+    if not result:
+        return "No original PDF is available.", 404
 
     return send_file(
-        io.BytesIO(pdf_bytes),
+        io.BytesIO(result["original_pdf"]),
+        download_name="Original_Resume.pdf",
+        mimetype="application/pdf",
+    )
+
+
+@app.route("/optimized-pdf/<result_id>", methods=["GET"])
+def optimized_pdf(result_id):
+    result = RESULT_STORE.get(result_id)
+    if not result:
+        return "No optimized PDF is available.", 404
+
+    return send_file(
+        io.BytesIO(result["optimized_pdf"]),
+        download_name="Optimized_Resume.pdf",
+        mimetype="application/pdf",
+    )
+
+
+@app.route("/download/<result_id>", methods=["GET"])
+def download(result_id):
+    result = RESULT_STORE.get(result_id)
+    if not result:
+        return "No optimized resume is available yet.", 400
+
+    return send_file(
+        io.BytesIO(result["optimized_pdf"]),
         download_name="Optimized_Resume.pdf",
         as_attachment=True,
         mimetype="application/pdf",
