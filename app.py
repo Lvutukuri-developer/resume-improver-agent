@@ -1,12 +1,18 @@
 import os
+import io
 import uuid
 from pathlib import Path
+from xml.sax.saxutils import escape as xml_escape
 from flask import Flask, request, render_template_string, send_file, session
 from dotenv import load_dotenv
 from agent import improve_resume
-from markupsafe import escape
 from PyPDF2 import PdfReader
-from weasyprint import HTML
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+from reportlab.platypus.flowables import HRFlowable
 
 load_dotenv()
 app = Flask(__name__)
@@ -28,65 +34,67 @@ def extract_text_from_pdf(file):
         raise ValueError("We could not read text from that PDF. Try a text-based PDF instead of a scanned image.") from exc
 
 
-RESUME_PDF_CSS = """
-    body { font-family: 'Helvetica', sans-serif; padding: 50px; color: #1a1a1f; line-height: 1.4; }
-    h1 { font-size: 28pt; margin-bottom: 5px; letter-spacing: -1px; }
-    .contact { font-size: 10pt; color: #666; margin-bottom: 30px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
-    h2 { font-size: 12pt; text-transform: uppercase; color: #0071e3; margin-top: 25px; margin-bottom: 10px; }
-    .job { margin-bottom: 15px; }
-    .job-title { font-weight: bold; font-size: 11pt; }
-    .job-info { color: #555; font-size: 10pt; font-style: italic; }
-    .skills-list { font-size: 10pt; }
-    .highlight { background: #fff3a3; border-radius: 3px; padding: 1px 3px; }
-"""
+HIGHLIGHT = colors.HexColor("#fff3a3")
+BLUE = colors.HexColor("#0071e3")
+TEXT = colors.HexColor("#1a1a1f")
+MUTED = colors.HexColor("#555555")
 
 
 def build_original_text_pdf(text):
-    pdf_html = f"""
-    <html>
-    <head><style>{RESUME_PDF_CSS} pre {{ white-space: pre-wrap; font-family: 'Helvetica', sans-serif; }}</style></head>
-    <body><pre>{escape(text)}</pre></body>
-    </html>
-    """
-    return HTML(string=pdf_html).write_pdf()
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=0.7 * inch, rightMargin=0.7 * inch)
+    styles = getSampleStyleSheet()
+    body = ParagraphStyle(
+        "OriginalBody",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=10,
+        leading=14,
+        textColor=TEXT,
+    )
+    story = []
+    for block in text.splitlines():
+        story.append(Paragraph(xml_escape(block.strip()) or "&nbsp;", body))
+    doc.build(story)
+    return buffer.getvalue()
 
 
 def build_optimized_resume_pdf(data):
-    jobs_html = []
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=0.7 * inch, rightMargin=0.7 * inch)
+    styles = getSampleStyleSheet()
+    title = ParagraphStyle("ResumeTitle", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=26, textColor=TEXT)
+    contact = ParagraphStyle("Contact", parent=styles["BodyText"], fontSize=9, leading=12, textColor=MUTED)
+    section = ParagraphStyle("Section", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=11, textColor=BLUE, spaceBefore=14, spaceAfter=6)
+    body = ParagraphStyle("Body", parent=styles["BodyText"], fontSize=10, leading=14, textColor=TEXT)
+    job_title = ParagraphStyle("JobTitle", parent=body, fontName="Helvetica-Bold")
+    job_info = ParagraphStyle("JobInfo", parent=body, fontName="Helvetica-Oblique", textColor=MUTED)
+    highlight = ParagraphStyle("Highlight", parent=body, backColor=HIGHLIGHT)
+
+    story = [
+        Paragraph(xml_escape(data.get("name", "")), title),
+        Paragraph(xml_escape(data.get("contact", "")), contact),
+        Spacer(1, 10),
+        HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#eeeeee")),
+        Paragraph("Professional Summary", section),
+        Paragraph(xml_escape(data.get("summary", "")), highlight),
+        Paragraph("Work Experience", section),
+    ]
+
     for job in data.get("experience", []):
-        title = escape(job.get("title", ""))
-        company = escape(job.get("company", ""))
-        dates = escape(job.get("dates", ""))
-        desc = escape(job.get("desc", ""))
-        dates_html = f'<div class="job-info">{dates}</div>' if dates else ""
-        jobs_html.append(
-            f"""
-            <div class="job">
-                <div class="job-title">{title}</div>
-                <div class="job-info">{company}</div>
-                {dates_html}
-                <p><span class="highlight">{desc}</span></p>
-            </div>
-            """
-        )
+        story.append(Paragraph(xml_escape(job.get("title", "")), job_title))
+        company_line = " | ".join(part for part in [job.get("company", ""), job.get("dates", "")] if part)
+        if company_line:
+            story.append(Paragraph(xml_escape(company_line), job_info))
+        story.append(Paragraph(xml_escape(job.get("desc", "")), highlight))
+        story.append(Spacer(1, 8))
 
     skills = ", ".join(data.get("skills", []))
-    pdf_html = f"""
-    <html>
-    <head><style>{RESUME_PDF_CSS}</style></head>
-    <body>
-        <h1>{escape(data.get('name', ''))}</h1>
-        <div class="contact">{escape(data.get('contact', ''))}</div>
-        <h2>Professional Summary</h2>
-        <p><span class="highlight">{escape(data.get('summary', ''))}</span></p>
-        <h2>Work Experience</h2>
-        {''.join(jobs_html)}
-        <h2>Skills</h2>
-        <p><span class="highlight">{escape(skills)}</span></p>
-    </body>
-    </html>
-    """
-    return HTML(string=pdf_html).write_pdf()
+    if skills:
+        story.extend([Paragraph("Skills", section), Paragraph(xml_escape(skills), highlight)])
+
+    doc.build(story)
+    return buffer.getvalue()
 
 
 def result_pdf_path(result_id, name):
