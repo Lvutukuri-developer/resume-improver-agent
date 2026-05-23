@@ -1,7 +1,6 @@
 import os
-import io
-import json
 import uuid
+from pathlib import Path
 from flask import Flask, request, render_template_string, send_file, session
 from dotenv import load_dotenv
 from agent import improve_resume
@@ -12,7 +11,8 @@ from weasyprint import HTML
 load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "resume-improver-dev-key")
-RESULT_STORE = {}
+RESULT_DIR = Path(app.instance_path) / "resume_results"
+RESULT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def extract_text_from_pdf(file):
@@ -87,6 +87,21 @@ def build_optimized_resume_pdf(data):
     </html>
     """
     return HTML(string=pdf_html).write_pdf()
+
+
+def result_pdf_path(result_id, name):
+    try:
+        uuid.UUID(result_id)
+    except ValueError:
+        return None
+    return RESULT_DIR / f"{result_id}_{name}.pdf"
+
+
+def save_result_pdfs(result_id, original_pdf_bytes, optimized_pdf_bytes):
+    original_path = result_pdf_path(result_id, "original")
+    optimized_path = result_pdf_path(result_id, "optimized")
+    original_path.write_bytes(original_pdf_bytes)
+    optimized_path.write_bytes(optimized_pdf_bytes)
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -369,11 +384,7 @@ def home():
 
             data = improve_resume(text)
             result_id = str(uuid.uuid4())
-            RESULT_STORE[result_id] = {
-                "data": data,
-                "original_pdf": original_pdf_bytes,
-                "optimized_pdf": build_optimized_resume_pdf(data),
-            }
+            save_result_pdfs(result_id, original_pdf_bytes, build_optimized_resume_pdf(data))
             session["latest_result_id"] = result_id
         except Exception as exc:
             error = str(exc) or "Something went wrong while refining the resume."
@@ -389,12 +400,12 @@ def home():
 
 @app.route("/original-pdf/<result_id>", methods=["GET"])
 def original_pdf(result_id):
-    result = RESULT_STORE.get(result_id)
-    if not result:
+    pdf_path = result_pdf_path(result_id, "original")
+    if not pdf_path or not pdf_path.exists():
         return "No original PDF is available.", 404
 
     return send_file(
-        io.BytesIO(result["original_pdf"]),
+        pdf_path,
         download_name="Original_Resume.pdf",
         mimetype="application/pdf",
     )
@@ -402,12 +413,12 @@ def original_pdf(result_id):
 
 @app.route("/optimized-pdf/<result_id>", methods=["GET"])
 def optimized_pdf(result_id):
-    result = RESULT_STORE.get(result_id)
-    if not result:
+    pdf_path = result_pdf_path(result_id, "optimized")
+    if not pdf_path or not pdf_path.exists():
         return "No optimized PDF is available.", 404
 
     return send_file(
-        io.BytesIO(result["optimized_pdf"]),
+        pdf_path,
         download_name="Optimized_Resume.pdf",
         mimetype="application/pdf",
     )
@@ -415,12 +426,12 @@ def optimized_pdf(result_id):
 
 @app.route("/download/<result_id>", methods=["GET"])
 def download(result_id):
-    result = RESULT_STORE.get(result_id)
-    if not result:
+    pdf_path = result_pdf_path(result_id, "optimized")
+    if not pdf_path or not pdf_path.exists():
         return "No optimized resume is available yet.", 400
 
     return send_file(
-        io.BytesIO(result["optimized_pdf"]),
+        pdf_path,
         download_name="Optimized_Resume.pdf",
         as_attachment=True,
         mimetype="application/pdf",
